@@ -1,48 +1,58 @@
 package controllers
 
-import java.time.{Instant, OffsetDateTime}
-import javax.inject._
-
 import akka.stream.Materializer
-import cn.playscala.mongo.Mongo
+import domain.infrastructure.repository.mongo.{MongoEventRepository, MongoMessageRepository, MongoResourceRepository, MongoUserRepository}
+import javax.inject._
 import models._
-import org.bson.types.ObjectId
-import play.api._
 import play.api.data.Form
-import play.api.mvc.{Action, _}
 import play.api.data.Forms.{tuple, _}
-import play.api.libs.json.{JsObject, Json}
-import services.{CommonService, EventService}
+import play.api.libs.json.Json
+import play.api.libs.json.Json.obj
+import play.api.mvc._
+import security.PasswordEncoder
+import utils.{AppUtil, HanLPUtil, HashUtil, RequestHelper}
 
 import scala.concurrent.{ExecutionContext, Future}
-import utils.{BitmapUtil, DateTimeUtil, HashUtil, RequestHelper}
+import scala.io.Source
 
-import scala.concurrent.duration._
-import play.api.libs.json.Json._
-
+/**
+ * 用户层
+ *
+ * @author 梦境迷离
+ * @since 2019-11-10
+ * @version v1.0 DDD重构
+ */
 @Singleton
-class UserController @Inject()(cc: ControllerComponents, mongo: Mongo, resourceController: GridFSController, userAction: UserAction, eventService: EventService, commonService: CommonService)(implicit ec: ExecutionContext, mat: Materializer, parser: BodyParsers.Default) extends AbstractController(cc) {
+class UserController @Inject()(cc: ControllerComponents, userAction: UserAction,
+                               passwordEncoder: PasswordEncoder, resourceRepo: MongoResourceRepository, userRepo: MongoUserRepository,
+                               messageRepo: MongoMessageRepository,
+                               mongoEventRepo: MongoEventRepository)(implicit ec: ExecutionContext, mat: Materializer, parser: BodyParsers.Default) extends AbstractController(cc) {
+
+  private val DEFAULT_LIMIT_SIZE_15 = 15
+  private val DEFAULT_LIMIT_SIZE_30 = 30
 
   def index() = checkLogin.async { implicit request: Request[AnyContent] =>
+    //查询条件，下同
+    val uid = request.session("uid")
     for {
-      articles <- mongo.find[Resource](obj("resType" -> Resource.Article, "author._id" -> request.session("uid"))).sort(obj("timeStat.updateTime" -> -1)).limit(15).list
-      articlesCount <- mongo.count[Resource](obj("resType" -> Resource.Article, "author._id" -> request.session("uid")))
-      qas <- mongo.find[Resource](obj("resType" -> Resource.QA, "author._id" -> request.session("uid"))).sort(obj("timeStat.updateTime" -> -1)).limit(15).list
-      qaCount <- mongo.count[Resource](obj("resType" -> Resource.QA, "author._id" -> request.session("uid")))
-      collectRes <- mongo.find[StatCollect](obj("uid" -> request.session("uid"))).sort(obj("collectTime" -> -1)).limit(15).list
-      collectResCount <- mongo.count[StatCollect](obj("uid" -> request.session("uid")))
+      articles <- resourceRepo.findResourceBy(Json.obj("timeStat.updateTime" -> -1), DEFAULT_LIMIT_SIZE_15, Json.obj("resType" -> Resource.Article, "author._id" -> uid))
+      articlesCount <- resourceRepo.countResourceBy(Json.obj("resType" -> Resource.Article, "author._id" -> uid))
+      qas <- resourceRepo.findResourceBy(Json.obj("timeStat.updateTime" -> -1), DEFAULT_LIMIT_SIZE_15, Json.obj("resType" -> Resource.QA, "author._id" -> uid))
+      qaCount <- resourceRepo.countResourceBy(Json.obj("resType" -> Resource.QA, "author._id" -> uid))
+      collectRes <- resourceRepo.findStatBy(Json.obj("collectTime" -> -1), DEFAULT_LIMIT_SIZE_15, Json.obj("uid" -> uid))
+      collectResCount <- resourceRepo.countStatBy(Json.obj("uid" -> uid))
     } yield {
       Ok(views.html.user.index(articles, articlesCount.toInt, qas, qaCount.toInt, collectRes, collectResCount.toInt))
     }
   }
 
   def home(uidOpt: Option[String]) = Action.async { implicit request: Request[AnyContent] =>
-    (uidOpt orElse RequestHelper.getUidOpt) match {
+    uidOpt orElse RequestHelper.getUidOpt match {
       case Some(uid) =>
         for {
-          createEvents <- mongo.find[Event](obj("actor._id" -> uid, "action" -> "create")).sort(obj("createTime" -> -1)).limit(30).list
-          events <- mongo.find[Event](obj("actor._id" -> uid)).sort(obj("createTime" -> -1)).limit(30).list
-          userOpt <- mongo.find[User](obj("_id" -> uid)).first
+          createEvents <- mongoEventRepo.findBy(Json.obj("createTime" -> -1), DEFAULT_LIMIT_SIZE_30, Json.obj("actor._id" -> uid, "action" -> "create"))
+          events <- mongoEventRepo.findBy(Json.obj("createTime" -> -1), DEFAULT_LIMIT_SIZE_30, Json.obj("actor._id" -> uid))
+          userOpt <- userRepo.findById(uid) //uid就是MongoDB中的user的_id?
         } yield {
           Ok(views.html.user.home(uidOpt, userOpt, createEvents, events))
         }
@@ -53,48 +63,35 @@ class UserController @Inject()(cc: ControllerComponents, mongo: Mongo, resourceC
 
   def message() = checkLogin.async { implicit request: Request[AnyContent] =>
     for {
-      messages <- mongo.find[Message](obj("uid" -> request.session("uid"))).sort(obj("createTime" -> -1)).limit(15).list
-      count <- mongo.count[Message](obj("uid" -> request.session("uid")))
+      messages <- messageRepo.findBy(Json.obj("createTime" -> -1), DEFAULT_LIMIT_SIZE_15, Json.obj("uid" -> request.session("uid")))
+      count <- messageRepo.countBy(Json.obj("uid" -> request.session("uid")))
     } yield {
       Ok(views.html.user.message(messages, count.toInt))
     }
   }
 
   def messageCount() = checkLogin.async { implicit request: Request[AnyContent] =>
-    for {
-      count <- mongo.count[Message](obj("uid" -> request.session("uid"), "read" -> false))
-    } yield {
-      Ok(Json.obj("status" -> 0, "count" -> count))
+    messageRepo.countBy(Json.obj("uid" -> request.session("uid"), "read" -> false)).map {
+      count => Ok(Json.obj("status" -> 0, "count" -> count))
     }
   }
 
+  //TODO 这怎么批量
   def readMessage() = checkLogin.async { implicit request: Request[AnyContent] =>
-    for {
-      wr <- mongo.updateMany[Message](obj("uid" -> request.session("uid"), "read" -> false), obj("$set" -> Json.obj("read" -> true)))
-    } yield {
-      Ok(Json.obj("status" -> 0))
-    }
+    messageRepo.readMessage(request.session("uid")).map(_ => Ok(Json.obj("status" -> 0)))
   }
 
   def removeMessage = checkLogin.async { implicit request: Request[AnyContent] =>
     Form(single("id" -> nonEmptyText)).bindFromRequest().fold(
       errForm => Future.successful(Redirect(routes.Application.message("系统提示", "您的输入有误！" + errForm.errors))),
       _id => {
-        for {
-          wr <- mongo.deleteMany[Message](obj("_id" -> _id, "uid" -> request.session("uid")))
-        } yield {
-          Ok(Json.obj("status" -> 0))
-        }
+        messageRepo.deleteMessage(_id, request.session("uid")).map(_ => Ok(Json.obj("status" -> 0)))
       }
     )
   }
 
   def clearMessage() = checkLogin.async { implicit request: Request[AnyContent] =>
-    for {
-      wr <- mongo.deleteMany[Message](obj("uid" -> request.session("uid")))
-    } yield {
-      Ok(Json.obj("status" -> 0))
-    }
+    messageRepo.clearMessage(request.session("uid")).map(_ => Ok(Json.obj("status" -> 0)))
   }
 
   def activate() = (checkLogin andThen userAction) { implicit request =>
@@ -110,13 +107,16 @@ class UserController @Inject()(cc: ControllerComponents, mongo: Mongo, resourceC
       errForm => Future.successful(Redirect(routes.Application.message("系统提示", "您的输入有误！" + errForm.errors))),
       tuple => {
         val (name, gender, city, introduction) = tuple
-        mongo.updateOne[User](
-          obj("_id" -> request.session("uid")),
-          obj(
-            "$set" -> obj("setting.name" -> name, "setting.gender" -> gender.getOrElse[String](""), "setting.city" -> city, "setting.introduction" -> introduction)
-        )).map{ wr =>
-          Redirect(routes.UserController.setting())
-            .addingToSession("name" -> name)
+        userRepo.updateUser(
+          request.session("uid"),
+          Json.obj(
+            "setting.name" -> name,
+            "setting.pinyin" -> HanLPUtil.convertToPinyin(name),
+            "setting.gender" -> gender.getOrElse[String](""),
+            "setting.city" -> city, "setting.introduction" -> introduction)
+        ).map { _ =>
+            Redirect(routes.UserController.setting())
+              .addingToSession("name" -> name)
         }
       }
     )
@@ -134,13 +134,8 @@ class UserController @Inject()(cc: ControllerComponents, mongo: Mongo, resourceC
     Form(single("avatar" -> nonEmptyText)).bindFromRequest().fold(
       errForm => Future.successful(Ok(Json.obj("status" -> 1, "msg" -> "您的输入有误！"))),
       url => {
-        mongo.updateOne[User](
-          obj("_id" -> request.session("uid")),
-          obj(
-            "$set" -> Json.obj("setting.headImg" -> url)
-        )).map{ wr =>
-          Ok(Json.obj("status" -> 0))
-            .addingToSession("headImg" -> url)
+        userRepo.updateUser(request.session("uid"), Json.obj("setting.headImg" -> url)).map { _ =>
+          Ok(Json.obj("status" -> 0)).addingToSession("headImg" -> url)
         }
       }
     )
@@ -151,12 +146,11 @@ class UserController @Inject()(cc: ControllerComponents, mongo: Mongo, resourceC
       errForm => Redirect(routes.Application.message("系统提示", "您的输入有误！" + errForm.errors.map(_.message).mkString("|"))),
       tuple => {
         val (password, password1, _) = tuple
-        if (password.isEmpty && request.user.password == "" || HashUtil.sha256(password.get) == request.user.password) {
-          mongo.updateOne[User](
-            Json.obj("_id" -> request.session("uid")),
-            Json.obj(
-              "$set" -> Json.obj("password" -> HashUtil.sha256(password1))
-          ))
+        if (password.isEmpty && request.user.password == "" || HashUtil.sha256(password.get) == request.user.password ||
+          request.user.argon2Hash.isDefined && request.user.salt.isDefined
+            && request.user.argon2Hash == passwordEncoder.hash(password.get, request.user.salt.get)
+        ) {
+          passwordEncoder.updateUserPassword(request.session("uid"), HashUtil.sha256(password1))
           Redirect(routes.Application.message("系统提示", "密码修改成功！"))
         } else {
           Redirect(routes.Application.message("系统提示", "您的输入有误！"))
@@ -164,4 +158,33 @@ class UserController @Inject()(cc: ControllerComponents, mongo: Mongo, resourceC
       }
     )
   }
+
+  def findUserList(searchTerm: String, limit: Int) = Action.async { implicit request: Request[AnyContent] =>
+    val queries = searchTerm.mkString(".*", ".*", ".*")
+    for {
+      list <- userRepo.findList(obj("setting.pinyin" -> obj("$regex" -> queries)), obj("setting.name" -> 1), 0, limit)
+    } yield {
+      val json = list map { u =>
+        obj(
+          "id" -> u._id,
+          "value" -> u.setting.name,
+          "link" -> s"/user/home?uid=${u._id}",
+          "data" -> ""
+        )
+      }
+
+      Ok(obj("code" -> 0, "data" -> json))
+    }
+
+    /*Source.fromFile("D:/name.txt", "utf-8").getLines().foreach{ line =>
+      val arr = line.split("###")
+      if(arr.length == 2) {
+        userRepo.updateUser(arr(0), obj("setting.name" -> arr(1)))
+        println(arr(0), arr(1))
+      }
+
+    }*/
+
+  }
+
 }

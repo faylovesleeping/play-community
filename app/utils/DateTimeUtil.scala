@@ -1,7 +1,10 @@
 package utils
 
 import java.time.format.DateTimeFormatter
-import java.time.{Duration, Instant, OffsetDateTime, ZoneOffset}
+import java.time.{Duration, Instant, LocalDate, LocalDateTime, OffsetDateTime, ZoneOffset}
+import java.util.Locale
+
+import scala.util.Try
 
 
 /**
@@ -49,7 +52,7 @@ object DateTimeUtil {
     } else if (minutes >= 1) {
       s"${minutes}分钟前"
     } else {
-      s"${seconds}秒前"
+      "刚刚"
     }
   }
 
@@ -83,5 +86,50 @@ object DateTimeUtil {
     Instant.now()
   }
 
+  /**
+   * Parse from 2007-12-03T10:15:30.00Z
+   */
+  def parse(str: String): Instant = {
+    Instant.parse(str)
+  }
+
+  /**
+   * https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html
+   */
+  private val dateFormats = List(
+    "yyyy-MM-dd",
+    "yyyy-M-dd",
+    "yyyy-MM-d",
+    "dd/MM/yyyy",
+    "dd MMM yyyy",
+    "yyyy年MM月dd日"
+  ).map{ str => DateTimeFormatter.ofPattern(str, Locale.ENGLISH) }
+
+  def dateStrToInstant(dayStr: String): Option[Instant] = {
+    dateFormats.find(fmt => Try(fmt.parse(dayStr)).isSuccess) match {
+      case Some(fmt) =>
+        Instant.ofEpochMilli(LocalDate.from(fmt.parse(dayStr)).toEpochDay)
+        Some(LocalDate.from(fmt.parse(dayStr)).atStartOfDay().toInstant(ZoneOffset.UTC))
+      case None => None
+    }
+  }
+
+  /**
+   * https://docs.oracle.com/javase/8/docs/api/java/time/format/DateTimeFormatter.html
+   */
+  private val dateTimeFormats = List(
+    "yyyy-MM-dd'T'HH:mm:ss'Z'",
+    "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+    "EEE, dd MMM yyyy HH:mm:ss 'GMT'",
+    "EEE, dd MMM yyyy HH:mm:ss 'Z'"
+  ).map(str => DateTimeFormatter.ofPattern(str, Locale.ENGLISH)) ::: List(DateTimeFormatter.RFC_1123_DATE_TIME, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+
+  def dateTimeStrToInstant(dateTimeStr: String): Option[Instant] = {
+    dateTimeFormats.find(fmt => Try(fmt.parse(dateTimeStr)).isSuccess) match {
+      case Some(fmt) =>
+        Some(LocalDateTime.from(fmt.parse(dateTimeStr)).toInstant(ZoneOffset.UTC))
+      case None => None
+    }
+  }
 
 }

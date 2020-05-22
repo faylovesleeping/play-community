@@ -3,8 +3,8 @@
 @import helper._
 @import utils.RequestHelper
 @import play.api.libs.json.Json
-@main(s"${app.Global.siteSetting.indexTitle}", "community", "tweet") {
-@views.html.nav("tweet")
+@main(s"${app.Global.siteSetting.indexTitle}", "tweet", "") {
+@views.html.nav("")
 <div id="app" class="layui-container">
   <div class="layui-row layui-col-space15">
     <div class="layui-col-md8">
@@ -132,10 +132,12 @@ var app = new Vue({
   data: { tweets: @Html(tweetsJson), hotTweets: @Html(hotTweetsJson)}
 });
 
+/*
 var socket = io("/tweet");
 socket.on('chat message', function(tweet) {
     app.tweets.unshift(JSON.parse(tweet));
 });
+*/
 
 $('#tweet-form').submit(function(){
   var tweet = $('#tweet').val();

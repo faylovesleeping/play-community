@@ -4,5 +4,11 @@
 
 GET        /internal/oauth/github/callback        controllers.api.InternalApiController.githubOauthCallback(code: String, state: String)
 
-
 GET        /internal/oauth/qq/callback            controllers.api.InternalApiController.qqOauthCallback(code: String, state: String)
+
+POST       /internal/oauth/weixin/callback            controllers.api.InternalApiController.weixinOauthCallback
+
+GET        /internal/article                        controllers.api.InternalApiController.getArticle(id: String)
+
+GET        /internal/article/list                 controllers.api.InternalApiController.getArticles(page: Int ?= 1, resType: String ?= "")
+

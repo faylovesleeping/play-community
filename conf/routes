@@ -2,13 +2,29 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
+# Board
+GET     /boards                                   controllers.BoardController.index(path: String, resType: String ?= "", status: String ?= "0", page: Int ?= 1)
+GET     /board/all                                controllers.BoardController.viewAllBoards()
+GET     /board/view                               controllers.ResourceController.view(_id: String)
+GET     /board/recordTraffic                      controllers.BoardController.recordTraffic(boardPath: String)
+GET     /board/followBoard                        controllers.BoardController.followBoard(boardPath: String, isFollow: Boolean)
+GET     /board/getRelateStatus                    controllers.BoardController.getRelateStatus(boardPath: String)
+GET     /board/tree                               controllers.BoardController.categoryTree(defaultSelected: String, callback: String)
+GET     /board/tree/json                          controllers.BoardController.categoryTreeJson()
+GET     /board/path/name                          controllers.BoardController.getPathName(path: String)
+
 # Cases
-GET     /corporations                             controllers.CorporationController.index(sortBy: String ?= "vote")
-POST    /corporation/add                          controllers.CorporationController.doAdd
-POST    /corporation/vote                         controllers.CorporationController.doVote
+GET     /leaders                                  controllers.CircleController.leaders()
+GET     /leader/crawl                             controllers.CircleController.crawlLeader(_id: String)
+POST    /leader/add                               controllers.CircleController.doAddLeader
+POST    /leader/vote                              controllers.CircleController.doVoteLeader
+
+GET     /corporations                             controllers.CircleController.corporations(sortBy: String ?= "vote")
+POST    /corporation/add                          controllers.CircleController.doAddCorporation
+POST    /corporation/vote                         controllers.CircleController.doVoteCorporation
 
 # Resource
-GET     /articles                                 controllers.ResourceController.index(resType: String = "article", status: String ?= "0", category: String ?= "/", page: Int ?= 1)
+GET     /articles                                 controllers.ResourceController.index(category: String ?= "/", resType: String = "article", status: String ?= "0", page: Int ?= 1)
 GET     /article/add                              controllers.ResourceController.add(resType: String = "article")
 GET     /article/edit                             controllers.ResourceController.edit(_id: String)
 GET     /article/view                             controllers.ResourceController.view(_id: String)
@@ -16,7 +32,7 @@ GET     /article/view                             controllers.ResourceController
 GET     /sitemap                                  controllers.ResourceController.sitemap
 GET     /sitemap.txt                              controllers.ResourceController.sitemap
 
-GET     /qas                                      controllers.ResourceController.index(resType: String = "qa", status: String ?= "0", category: String ?= "/", page: Int ?= 1)
+GET     /qas                                      controllers.ResourceController.index(category: String ?= "/", resType: String = "qa", status: String ?= "0", page: Int ?= 1)
 GET     /qa/add                                   controllers.ResourceController.add(resType: String = "qa")
 GET     /qa/edit                                  controllers.ResourceController.edit(_id: String)
 GET     /qa/view                                  controllers.ResourceController.view(_id: String)
@@ -34,6 +50,7 @@ GET     /doc/catalog                              controllers.DocController.view
 
 
 # Exam
+GET     /exams                                    controllers.ResourceController.index(category: String ?= "/", resType: String = "exam", status: String ?= "0", page: Int ?= 1)
 GET     /exam/view                                controllers.ResourceController.view(_id: String)
 GET     /exam/add                                 controllers.ExamController.add
 GET     /exam/edit                                controllers.ExamController.edit(_id: String)
@@ -46,6 +63,7 @@ GET     /tweets                                   controllers.TweetController.in
 GET     /tweet/json                               controllers.TweetController.getLatestAndHot(count: Int ?= 15)
 POST    /tweet/add                                controllers.TweetController.doAdd
 GET     /tweet/view                               controllers.TweetController.view(_id: String)
+GET     /tweet/remove                             controllers.TweetController.doRemove(_id: String)
 
 # Dict
 GET     /dict                                     controllers.DictController.index
@@ -73,11 +91,14 @@ GET     /socket.io/                              play.engineio.EngineIOControlle
 POST    /socket.io/                              play.engineio.EngineIOController.endpoint(transport)
 
 # Application
-GET     /                                         controllers.Application.index(status: String ?= "0", category: String ?= "/", page: Int ?= 1)
+GET     /                                         controllers.Application.index(resType: String ?= "", status: String ?= "0", page: Int ?= 1)
 GET     /icons                                    controllers.Application.icons
 GET     /search                                   controllers.Application.search(q: String ?= "", plate: String ?= "", page: Int ?= 1)
 GET     /login                                    controllers.Application.login(login: Option[String])
 POST    /login                                    controllers.Application.doLogin
+GET     /weixinLogin                              controllers.Application.weixinLogin
+GET     /weixinAppCode                            controllers.Application.renderAppCodeImage(uuid: String)
+GET     /waitWeiXinScan                           controllers.Application.waitWeiXinScanResult(uuid: String)
 GET     /register                                 controllers.Application.register
 POST    /register                                 controllers.Application.doRegister
 
@@ -94,7 +115,7 @@ POST    /activate                                 controllers.Application.doActi
 POST    /activate/email                           controllers.Application.doSendActiveMail
 
 # FIXME
-GET     /temp/indexBook                           controllers.Application.indexBook
+# GET     /temp/indexBook                           controllers.Application.indexBook
 
 # User
 GET     /user                                     controllers.UserController.index
@@ -109,6 +130,7 @@ GET     /user/setting                             controllers.UserController.set
 POST    /user/setting                             controllers.UserController.doSetting
 POST    /user/password                            controllers.UserController.doSetPassword
 POST    /user/head                                controllers.UserController.doSetHeadImg()
+GET     /user/find                                controllers.UserController.findUserList(searchTerm: String ?= "", limit: Int ?= 10)
 
 GET     /todo                                     controllers.Default.todo
 
